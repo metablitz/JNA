@@ -530,7 +530,7 @@ router.post('/users', requireAdmin, async (req, res) => {
 
   const { data, error } = await supabase
     .from('users')
-    .insert({ phone, password_hash, pharmacy_name, customer_code, address, role, is_active: true })
+    .insert({ phone, password_hash, pharmacy_name, customer_code, address, role, is_active: true, registration_status: 'approved' })
     .select('id, phone, pharmacy_name, customer_code, address, role, is_active')
     .single();
 

@@ -399,7 +399,7 @@ export default function AdminOrders() {
                 <select value={newOrder.payment_method} onChange={e => setNewOrder(o => ({ ...o, payment_method: e.target.value }))}>
                   <option value="cong_no">💳 Công nợ</option>
                   <option value="cash">💵 Tiền mặt</option>
-                  <option value="bank_transfer">🏦 Chuyển khoản</option>
+                  <option value="bank">🏦 Chuyển khoản</option>
                 </select>
               </div>
 

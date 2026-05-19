@@ -227,7 +227,7 @@ export default function AdminProducts() {
           </div>
           <select className="filter-select" value={categoryFilter} onChange={e => { setCategoryFilter(e.target.value); setPage(1); }}>
             <option value="">Tất cả danh mục</option>
-            {categories.map(c => <option key={c.category} value={c.category}>{c.category}</option>)}
+            {categories.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap', color: '#374151' }}>
             <input type="checkbox" checked={showHidden} onChange={e => { setShowHidden(e.target.checked); setPage(1); }} />

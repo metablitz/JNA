@@ -173,7 +173,7 @@ export default function Cart() {
                 {[
                   { value: 'cong_no', label: '💳 Công nợ', desc: 'Thanh toán sau' },
                   { value: 'cash',    label: '💵 Tiền mặt', desc: 'Khi nhận hàng' },
-                  { value: 'bank_transfer', label: '🏦 Chuyển khoản', desc: 'Trước khi giao' },
+                  { value: 'bank',          label: '🏦 Chuyển khoản', desc: 'Trước khi giao' },
                 ].map(opt => (
                   <label key={opt.value} className={`payment-option ${paymentMethod === opt.value ? 'selected' : ''}`}>
                     <input type="radio" name="payment" value={opt.value} checked={paymentMethod === opt.value} onChange={() => setPaymentMethod(opt.value)} />
