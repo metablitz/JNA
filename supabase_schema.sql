@@ -140,12 +140,42 @@ CREATE INDEX IF NOT EXISTS idx_orders_user_id          ON orders(user_id);
 CREATE INDEX IF NOT EXISTS idx_orders_status           ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_orders_payment_status   ON orders(payment_status);
 CREATE INDEX IF NOT EXISTS idx_order_items_order_id    ON order_items(order_id);
+CREATE INDEX IF NOT EXISTS idx_order_items_product_id  ON order_items(product_id);
 CREATE INDEX IF NOT EXISTS idx_price_list_category     ON price_list(category);
 CREATE INDEX IF NOT EXISTS idx_wishlists_user          ON wishlists(user_id);
+CREATE INDEX IF NOT EXISTS idx_wishlists_product_id    ON wishlists(product_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_user      ON notifications(user_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_unread    ON notifications(user_id, is_read);
+CREATE INDEX IF NOT EXISTS idx_notifications_order_id  ON notifications(order_id) WHERE order_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_messages_user           ON messages(user_id);
 CREATE INDEX IF NOT EXISTS idx_stock_logs_product      ON stock_logs(product_id);
+CREATE INDEX IF NOT EXISTS idx_stock_logs_created_by   ON stock_logs(created_by) WHERE created_by IS NOT NULL;
+
+-- ============================================================
+-- ROW LEVEL SECURITY
+-- All access goes through the Express backend (service_role key).
+-- Enabling RLS with no anon policies = deny-by-default for direct
+-- Data API access while the backend continues to work unchanged.
+-- ============================================================
+ALTER TABLE users         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE products      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE product_tiers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE orders        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE order_items   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE price_list    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE wishlists     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE messages      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE stock_logs    ENABLE ROW LEVEL SECURITY;
+
+-- ============================================================
+-- STORAGE BUCKET POLICIES
+-- (Create buckets manually in Supabase dashboard, then apply)
+-- ============================================================
+-- Bucket 'licenses' (public) — no listing policy needed;
+--   file URLs are accessible directly, upload via backend service_role.
+-- Bucket 'products' (public) — no listing policy needed;
+--   product image URLs are accessible directly, upload via backend service_role.
 
 -- ============================================================
 -- SEED: Tài khoản Admin mặc định
