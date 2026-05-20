@@ -29,8 +29,9 @@ export default function Catalog() {
 
   // selections: { [pricelist_id]: { qty, unit, price, name } }
   const [selections, setSelections] = useState({});
-  // localQtys: pending qty per product before adding to selections
+  // localQtys/localUnits: pending values per product before adding to selections
   const [localQtys, setLocalQtys] = useState({});
+  const [localUnits, setLocalUnits] = useState({});
   const [ordering, setOrdering] = useState(false);
 
   const { user } = useAuth();
@@ -69,7 +70,7 @@ export default function Catalog() {
 
   // ── Cart helpers ─────────────────────────────────────────────
   const getSelQty = (id) => selections[id]?.qty || 0;
-  const getUnit   = (id, defaultUnit) => selections[id]?.unit || defaultUnit;
+  const getUnit   = (id, defaultUnit) => selections[id]?.unit || localUnits[id] || defaultUnit;
   const getLocalQty = (id) => localQtys[id] ?? 1;
 
   const resolvePrice = (product, unit) =>
@@ -101,13 +102,14 @@ export default function Catalog() {
   };
 
   const changeUnit = (id, unit, product) => {
-    setSelections(prev => {
-      if (!prev[id]) return prev;
-      return {
+    if (selections[id]) {
+      setSelections(prev => ({
         ...prev,
         [id]: { ...prev[id], unit, price: resolvePrice(product, unit) },
-      };
-    });
+      }));
+    } else {
+      setLocalUnits(prev => ({ ...prev, [id]: unit }));
+    }
   };
 
   const handleOrder = async () => {
