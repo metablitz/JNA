@@ -77,8 +77,10 @@ export default function AdminProducts() {
     const qty = Number(stockQty);
     if (!qty || isNaN(qty)) return;
     setStockSaving(true);
+    // export: user enters positive number → send negative to subtract from stock
+    const change_qty = stockReason === 'export' ? -Math.abs(qty) : qty;
     try {
-      await api.post(`/admin/products/${stockModal.id}/stock`, { change_qty: qty, reason: stockReason, note: stockNote });
+      await api.post(`/admin/products/${stockModal.id}/stock`, { change_qty, reason: stockReason, note: stockNote });
       setStockModal(null);
       load();
       api.get('/admin/products/low-stock').then(r => setLowStock(r.data || [])).catch(() => {});
