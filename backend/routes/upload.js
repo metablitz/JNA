@@ -1,6 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const supabase = require('../lib/supabase');
+const { requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 const upload = multer({
@@ -37,7 +38,7 @@ const imageUpload = multer({
   },
 });
 
-router.post('/product', imageUpload.single('file'), async (req, res) => {
+router.post('/product', requireAdmin, imageUpload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'File ảnh không hợp lệ' });
 
   const ext = req.file.originalname.split('.').pop().toLowerCase();

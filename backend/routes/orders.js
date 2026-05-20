@@ -190,6 +190,9 @@ router.post('/pricelist', requireAuth, async (req, res) => {
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
+
+  await createNotification(req.user.id, 'order_placed', order.order_code, order.id);
+
   res.status(201).json(order);
 });
 
