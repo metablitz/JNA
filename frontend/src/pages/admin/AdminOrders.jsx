@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Download, Search, Printer, Plus, X, Trash2 } from 'lucide-react';
 import api from '../../lib/api';
 import { useToast } from '../../context/ToastContext';
@@ -40,6 +40,8 @@ export default function AdminOrders() {
   const [productResults, setProductResults] = useState([]);
   const [productSearching, setProductSearching] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [bulkConfirming, setBulkConfirming] = useState(false);
   const limit = 20;
   const { showToast } = useToast();
 
@@ -63,7 +65,7 @@ export default function AdminOrders() {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { fetch(); }, [statusFilter, paymentFilter, from, to, page, search]);
+  useEffect(() => { setSelectedIds(new Set()); fetch(); }, [statusFilter, paymentFilter, from, to, page, search]);
 
   const updateStatus = async (id, status) => {
     await api.put(`/admin/orders/${id}/status`, { status });
@@ -152,6 +154,18 @@ export default function AdminOrders() {
     setNewOrder(o => ({ ...o, items: o.items.filter(i => i.product_id !== product_id) }));
   };
 
+  const handleBulkConfirm = async () => {
+    if (selectedIds.size === 0) return;
+    setBulkConfirming(true);
+    try {
+      const res = await api.put('/admin/orders/bulk-confirm', { order_ids: [...selectedIds] });
+      showToast(`Đã xác nhận ${res.data.confirmed} đơn hàng`, 'success');
+      setSelectedIds(new Set());
+      fetch();
+    } catch (e) { showToast(e.response?.data?.error || 'Lỗi xác nhận', 'error'); }
+    finally { setBulkConfirming(false); }
+  };
+
   const handleCreate = async () => {
     if (!newOrder.user_id || newOrder.items.length === 0) { showToast('Chọn khách hàng và ít nhất 1 sản phẩm', 'error'); return; }
     setCreating(true);
@@ -232,25 +246,71 @@ export default function AdminOrders() {
           );
         })()}
 
+        {selectedIds.size > 0 && (
+          <div className="bulk-action-bar">
+            <span>Đã chọn <strong>{selectedIds.size}</strong> đơn chờ xác nhận</span>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: 13 }} onClick={() => setSelectedIds(new Set())}>
+                Bỏ chọn
+              </button>
+              <button className="btn-primary" style={{ padding: '6px 14px', fontSize: 13 }} onClick={handleBulkConfirm} disabled={bulkConfirming}>
+                {bulkConfirming ? 'Đang xác nhận...' : `✓ Xác nhận ${selectedIds.size} đơn`}
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="admin-table-wrap">
           <table className="admin-table">
             <thead>
-              <tr><th>Mã đơn</th><th>Khách hàng</th><th>Ngày đặt</th><th>Tổng tiền</th><th>Đơn hàng</th><th>Thanh toán</th><th>Thao tác</th></tr>
+              <tr>
+                <th style={{ width: 36, textAlign: 'center', paddingLeft: 8, paddingRight: 8 }}>
+                  {(() => {
+                    const pendingOrders = orders.filter(o => o.status === 'pending');
+                    const allSelected = pendingOrders.length > 0 && pendingOrders.every(o => selectedIds.has(o.id));
+                    return (
+                      <input type="checkbox" checked={allSelected} disabled={pendingOrders.length === 0}
+                        title="Chọn tất cả pending"
+                        onChange={e => {
+                          const ids = new Set(selectedIds);
+                          if (e.target.checked) pendingOrders.forEach(o => ids.add(o.id));
+                          else pendingOrders.forEach(o => ids.delete(o.id));
+                          setSelectedIds(ids);
+                        }}
+                      />
+                    );
+                  })()}
+                </th>
+                <th>Mã đơn</th><th>Khách hàng</th><th>Ngày đặt</th><th>Tổng tiền</th><th>Đơn hàng</th><th>Thanh toán</th><th>Thao tác</th>
+              </tr>
             </thead>
             <tbody>
               {loading ? (
                 Array.from({ length: 6 }).map((_, i) => (
                   <tr key={i}>
+                    <td style={{ textAlign: 'center' }}><div className="skeleton" style={{ height: 14, borderRadius: 4, width: 16, margin: '0 auto' }} /></td>
                     {Array.from({ length: 7 }).map((__, j) => (
                       <td key={j}><div className="skeleton" style={{ height: 14, borderRadius: 4, width: j === 1 ? '80%' : j === 3 ? '60%' : '70%' }} /></td>
                     ))}
                   </tr>
                 ))
               ) : orders.length === 0 ? (
-                <tr><td colSpan={7} className="text-center">Không có đơn hàng</td></tr>
+                <tr><td colSpan={8} className="text-center">Không có đơn hàng</td></tr>
               ) : orders.map((order) => (
-                <>
-                  <tr key={order.id} className="clickable" onClick={() => setExpanded(expanded === order.id ? null : order.id)}>
+                <React.Fragment key={order.id}>
+                  <tr className="clickable" onClick={() => setExpanded(expanded === order.id ? null : order.id)}>
+                    <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+                      {order.status === 'pending' && (
+                        <input type="checkbox" checked={selectedIds.has(order.id)}
+                          onChange={e => {
+                            const ids = new Set(selectedIds);
+                            if (e.target.checked) ids.add(order.id);
+                            else ids.delete(order.id);
+                            setSelectedIds(ids);
+                          }}
+                        />
+                      )}
+                    </td>
                     <td><strong>{order.order_code}</strong></td>
                     <td>
                       <p>{order.users?.pharmacy_name}</p>
@@ -286,7 +346,7 @@ export default function AdminOrders() {
                   </tr>
                   {expanded === order.id && (
                     <tr key={`${order.id}-detail`} className="expanded-row">
-                      <td colSpan={7}>
+                      <td colSpan={8}>
                         <div className="order-items-detail">
                           {order.order_items?.map((item) => (
                             <div key={item.id} className="order-item-row">
@@ -309,7 +369,7 @@ export default function AdminOrders() {
                       </td>
                     </tr>
                   )}
-                </>
+                </React.Fragment>
               ))}
             </tbody>
           </table>

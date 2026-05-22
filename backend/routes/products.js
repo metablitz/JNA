@@ -76,6 +76,52 @@ router.get('/scan', requireAuth, async (req, res) => {
   res.json({ products, source: 'name' });
 });
 
+// Frequently bought together — must be BEFORE /:id to avoid route shadowing
+router.get('/frequently-bought', requireAuth, async (req, res) => {
+  const ids = req.query.ids ? String(req.query.ids).split(',').filter(Boolean) : [];
+  if (ids.length === 0) return res.json([]);
+
+  // Find order IDs that contain any of the cart products (delivered only)
+  const { data: orderItems } = await supabase
+    .from('order_items')
+    .select('order_id, product_id')
+    .in('product_id', ids)
+    .limit(500);
+
+  if (!orderItems || orderItems.length === 0) return res.json([]);
+
+  const orderIds = [...new Set(orderItems.map(i => i.order_id))];
+
+  // Find all products in those orders (excluding the cart products)
+  const { data: coItems } = await supabase
+    .from('order_items')
+    .select('product_id')
+    .in('order_id', orderIds)
+    .not('product_id', 'in', `(${ids.join(',')})`);
+
+  if (!coItems || coItems.length === 0) return res.json([]);
+
+  // Count frequency
+  const freq = {};
+  coItems.forEach(i => { freq[i.product_id] = (freq[i.product_id] || 0) + 1; });
+  const topIds = Object.entries(freq)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 5)
+    .map(([id]) => id);
+
+  if (topIds.length === 0) return res.json([]);
+
+  const { data: products, error } = await supabase
+    .from('products')
+    .select('id, name, unit, price, original_price, image_url, stock, product_tiers(id, min_qty, price)')
+    .in('id', topIds)
+    .eq('is_active', true)
+    .gt('stock', 0);
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(products || []);
+});
+
 router.get('/:id', requireAuth, async (req, res) => {
   const { data, error } = await supabase
     .from('products')

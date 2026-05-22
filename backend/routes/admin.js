@@ -4,6 +4,7 @@ const multer = require('multer');
 const XLSX = require('xlsx');
 const supabase = require('../lib/supabase');
 const { requireAdmin } = require('../middleware/auth');
+const { pushToUser } = require('../lib/sseClients');
 
 const xlsxUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
@@ -190,15 +191,33 @@ router.post('/products/:id/stock', requireAdmin, async (req, res) => {
   res.json({ product: updateRes.data, new_stock: newStock });
 });
 
-router.get('/products/:id/stock-log', requireAdmin, async (req, res) => {
+// Expiring products — expiry_date stored as "MM/YYYY" text, must parse in Node
+router.get('/products/expiring', requireAdmin, async (req, res) => {
+  const days = parseInt(req.query.days) || 60;
+  const now = new Date();
+  const cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate() + days);
+
   const { data, error } = await supabase
-    .from('stock_logs')
-    .select('*, users(pharmacy_name)')
-    .eq('product_id', req.params.id)
-    .order('created_at', { ascending: false })
-    .limit(50);
+    .from('products')
+    .select('id, name, category, expiry_date, stock, unit')
+    .eq('is_active', true)
+    .not('expiry_date', 'is', null);
+
   if (error) return res.status(500).json({ error: error.message });
-  res.json(data || []);
+
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const parsed = (data || [])
+    .map(p => {
+      const [mm, yyyy] = (p.expiry_date || '').split('/');
+      const expiry = new Date(parseInt(yyyy), parseInt(mm) - 1, 1);
+      const daysLeft = Math.ceil((expiry - today) / 86400000);
+      return { ...p, daysLeft, is_expired: daysLeft < 0 };
+    })
+    .filter(p => !isNaN(p.daysLeft) && p.daysLeft <= days)
+    .sort((a, b) => a.daysLeft - b.daysLeft)
+    .slice(0, 30);
+
+  res.json(parsed);
 });
 
 // Low stock products
@@ -210,6 +229,17 @@ router.get('/products/low-stock', requireAdmin, async (req, res) => {
     .eq('is_active', true)
     .lte('stock', threshold)
     .order('stock', { ascending: true })
+    .limit(50);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data || []);
+});
+
+router.get('/products/:id/stock-log', requireAdmin, async (req, res) => {
+  const { data, error } = await supabase
+    .from('stock_logs')
+    .select('*, users(pharmacy_name)')
+    .eq('product_id', req.params.id)
+    .order('created_at', { ascending: false })
     .limit(50);
   if (error) return res.status(500).json({ error: error.message });
   res.json(data || []);
@@ -302,62 +332,50 @@ router.post('/orders', requireAdmin, async (req, res) => {
   await supabase.from('order_items').insert(itemsWithOrderId);
 
   // Notify customer
+  const notifBody = `Đơn hàng ${orderCode} đã được tạo và xác nhận bởi JNA.`;
   await supabase.from('notifications').insert({
     user_id, type: 'order_confirmed',
     title: 'Đơn hàng đã được tạo',
-    body: `Đơn hàng ${orderCode} đã được tạo và xác nhận bởi JNA.`,
+    body: notifBody,
     order_id: order.id,
   });
+  pushToUser(user_id, { type: 'notification', title: 'Đơn hàng đã được tạo', body: notifBody });
 
   res.status(201).json(order);
 });
 
 // --- ORDERS ---
-router.get('/orders', requireAdmin, async (req, res) => {
-  const { status, page = 1, limit = 20, from, to } = req.query;
-  const offset = (page - 1) * limit;
+router.put('/orders/bulk-confirm', requireAdmin, async (req, res) => {
+  const { order_ids } = req.body;
+  if (!Array.isArray(order_ids) || order_ids.length === 0) {
+    return res.status(400).json({ error: 'Thiếu danh sách đơn hàng' });
+  }
 
-  let query = supabase
+  const { data, error } = await supabase
     .from('orders')
-    .select(`
-      *,
-      users (id, pharmacy_name, phone, customer_code),
-      order_items (
-        id, quantity, unit_price, total_price,
-        products (id, name, unit)
-      )
-    `, { count: 'exact' })
-    .order('created_at', { ascending: false })
-    .range(offset, offset + Number(limit) - 1);
+    .update({ status: 'confirmed' })
+    .in('id', order_ids)
+    .eq('status', 'pending')
+    .select('id, user_id, order_code');
 
-  if (req.query.user_id) query = query.eq('user_id', req.query.user_id);
-  if (status && status !== 'all') query = query.eq('status', status);
-  if (req.query.payment_status && req.query.payment_status !== 'all') query = query.eq('payment_status', req.query.payment_status);
-  if (from) query = query.gte('created_at', new Date(from).toISOString());
-  if (to) {
-    const toDate = new Date(to);
-    toDate.setHours(23, 59, 59, 999);
-    query = query.lte('created_at', toDate.toISOString());
-  }
-  if (req.query.search) {
-    const s = req.query.search;
-    // Search by order_code directly; also find matching user_ids for pharmacy_name
-    const { data: matchedUsers } = await supabase
-      .from('users').select('id').ilike('pharmacy_name', `%${s}%`);
-    const userIds = (matchedUsers || []).map(u => u.id);
-    if (userIds.length > 0) {
-      query = query.or(`order_code.ilike.%${s}%,user_id.in.(${userIds.join(',')})`);
-    } else {
-      query = query.ilike('order_code', `%${s}%`);
-    }
-  }
-
-  const { data, error, count } = await query;
   if (error) return res.status(500).json({ error: error.message });
-  res.json({ orders: data, total: count });
+
+  if (data && data.length > 0) {
+    await supabase.from('notifications').insert(
+      data.map(o => ({
+        user_id: o.user_id, type: 'order_confirmed',
+        title: 'Đơn hàng đã xác nhận',
+        body: `Đơn ${o.order_code} đang được chuẩn bị.`,
+        order_id: o.id,
+      }))
+    );
+    data.forEach(o => pushToUser(o.user_id, { type: 'notification', title: 'Đơn hàng đã xác nhận', body: `Đơn ${o.order_code} đang được chuẩn bị.` }));
+  }
+
+  res.json({ confirmed: data?.length || 0 });
 });
 
-// Export orders to Excel
+// Export route MUST be before '/orders' (generic) to avoid route shadowing
 router.get('/orders/export', requireAdmin, async (req, res) => {
   const { status, from, to } = req.query;
 
@@ -380,7 +398,6 @@ router.get('/orders/export', requireAdmin, async (req, res) => {
   const STATUS_VN = { pending: 'Chờ XN', confirmed: 'Đã xác nhận', shipping: 'Đang giao', delivered: 'Đã giao', cancelled: 'Đã hủy' };
   const PAY_VN = { cong_no: 'Công nợ', cash: 'Tiền mặt', bank: 'Chuyển khoản' };
 
-  // Flatten: one row per order_item
   const rows = [['Mã đơn', 'Nhà thuốc', 'SĐT', 'Mã KH', 'Ngày đặt', 'Trạng thái', 'Thanh toán', 'TT tiền', 'Sản phẩm', 'ĐVT', 'SL', 'Đơn giá', 'Thành tiền', 'Tổng đơn']];
   (data || []).forEach(o => {
     const date = new Date(o.created_at).toLocaleDateString('vi-VN');
@@ -416,6 +433,49 @@ router.get('/orders/export', requireAdmin, async (req, res) => {
   res.send(buf);
 });
 
+router.get('/orders', requireAdmin, async (req, res) => {
+  const { status, page = 1, limit = 20, from, to } = req.query;
+  const offset = (page - 1) * limit;
+
+  let query = supabase
+    .from('orders')
+    .select(`
+      *,
+      users (id, pharmacy_name, phone, customer_code),
+      order_items (
+        id, quantity, unit_price, total_price,
+        products (id, name, unit)
+      )
+    `, { count: 'exact' })
+    .order('created_at', { ascending: false })
+    .range(offset, offset + Number(limit) - 1);
+
+  if (req.query.user_id) query = query.eq('user_id', req.query.user_id);
+  if (status && status !== 'all') query = query.eq('status', status);
+  if (req.query.payment_status && req.query.payment_status !== 'all') query = query.eq('payment_status', req.query.payment_status);
+  if (from) query = query.gte('created_at', new Date(from).toISOString());
+  if (to) {
+    const toDate = new Date(to);
+    toDate.setHours(23, 59, 59, 999);
+    query = query.lte('created_at', toDate.toISOString());
+  }
+  if (req.query.search) {
+    const s = req.query.search;
+    const { data: matchedUsers } = await supabase
+      .from('users').select('id').ilike('pharmacy_name', `%${s}%`);
+    const userIds = (matchedUsers || []).map(u => u.id);
+    if (userIds.length > 0) {
+      query = query.or(`order_code.ilike.%${s}%,user_id.in.(${userIds.join(',')})`);
+    } else {
+      query = query.ilike('order_code', `%${s}%`);
+    }
+  }
+
+  const { data, error, count } = await query;
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ orders: data, total: count });
+});
+
 const STATUS_TO_NOTIF = {
   confirmed: 'order_confirmed',
   shipping:  'order_shipping',
@@ -439,13 +499,10 @@ router.put('/orders/:id/status', requireAdmin, async (req, res) => {
 
   const notifType = STATUS_TO_NOTIF[status];
   if (notifType && data) {
-    await supabase.from('notifications').insert({
-      user_id: data.user_id,
-      type: notifType,
-      title: { order_confirmed: 'Đơn hàng đã xác nhận', order_shipping: 'Đơn hàng đang giao', order_delivered: 'Đơn hàng đã giao', order_cancelled: 'Đơn hàng đã hủy' }[notifType],
-      body:  { order_confirmed: `Đơn ${data.order_code} đang được chuẩn bị.`, order_shipping: `Đơn ${data.order_code} đã bàn giao cho đơn vị vận chuyển.`, order_delivered: `Đơn ${data.order_code} đã giao thành công. Cảm ơn bạn!`, order_cancelled: `Đơn ${data.order_code} đã bị hủy.` }[notifType],
-      order_id: data.id,
-    });
+    const TITLES = { order_confirmed: 'Đơn hàng đã xác nhận', order_shipping: 'Đơn hàng đang giao', order_delivered: 'Đơn hàng đã giao', order_cancelled: 'Đơn hàng đã hủy' };
+    const BODIES = { order_confirmed: `Đơn ${data.order_code} đang được chuẩn bị.`, order_shipping: `Đơn ${data.order_code} đã bàn giao cho đơn vị vận chuyển.`, order_delivered: `Đơn ${data.order_code} đã giao thành công. Cảm ơn bạn!`, order_cancelled: `Đơn ${data.order_code} đã bị hủy.` };
+    await supabase.from('notifications').insert({ user_id: data.user_id, type: notifType, title: TITLES[notifType], body: BODIES[notifType], order_id: data.id });
+    pushToUser(data.user_id, { type: 'notification', title: TITLES[notifType], body: BODIES[notifType] });
   }
 
   res.json(data);
@@ -663,6 +720,40 @@ router.post('/notifications/broadcast', requireAdmin, async (req, res) => {
   const { error } = await supabase.from('notifications').insert(rows);
   if (error) return res.status(500).json({ error: error.message });
   res.json({ sent: targets.length });
+});
+
+// Monthly revenue report
+router.get('/stats/revenue-monthly', requireAdmin, async (req, res) => {
+  const months = Math.min(Math.max(parseInt(req.query.months) || 12, 3), 24);
+  const now = new Date();
+  const result = [];
+
+  for (let i = months - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const start = new Date(d.getFullYear(), d.getMonth(), 1).toISOString();
+    const end   = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59).toISOString();
+
+    const { data } = await supabase
+      .from('orders')
+      .select('total_amount, status, payment_status')
+      .eq('status', 'delivered')
+      .gte('created_at', start)
+      .lte('created_at', end);
+
+    const revenue = (data || []).reduce((s, o) => s + Number(o.total_amount || 0), 0);
+    const orders  = (data || []).length;
+    const paid    = (data || []).filter(o => o.payment_status === 'paid').reduce((s, o) => s + Number(o.total_amount || 0), 0);
+
+    result.push({
+      month: `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`,
+      revenue,
+      orders,
+      paid,
+      unpaid: revenue - paid,
+    });
+  }
+
+  res.json(result);
 });
 
 // Dashboard stats

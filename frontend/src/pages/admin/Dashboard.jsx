@@ -33,6 +33,7 @@ const CustomTooltip = ({ active, payload, label }) => {
 export default function Dashboard() {
   const [stats, setStats] = useState(null);
   const [lowStock, setLowStock] = useState([]);
+  const [expiringProducts, setExpiringProducts] = useState([]);
   const [chartDays, setChartDays] = useState(7);
   const [pendingOrders, setPendingOrders] = useState([]);
   const [confirmingId, setConfirmingId] = useState(null);
@@ -48,6 +49,9 @@ export default function Dashboard() {
   useEffect(() => {
     api.get('/admin/products/low-stock', { params: { threshold: 20 } })
       .then(res => setLowStock(res.data || []))
+      .catch(() => {});
+    api.get('/admin/products/expiring', { params: { days: 60 } })
+      .then(res => setExpiringProducts(res.data || []))
       .catch(() => {});
     loadPendingOrders();
   }, []);
@@ -184,6 +188,47 @@ export default function Dashboard() {
               onClick={() => navigate('/admin/products')}
             >
               Quản lý kho →
+            </button>
+          </div>
+        )}
+
+        {/* Expiring products alert */}
+        {expiringProducts.length > 0 && (
+          <div className="dash-section" style={{ borderLeft: '3px solid #ef4444' }}>
+            <h2 className="dash-section-title" style={{ color: '#dc2626' }}>
+              ⚠️ Sản phẩm sắp / đã hết hạn ({expiringProducts.length})
+            </h2>
+            <div className="low-stock-list">
+              {expiringProducts.map(p => {
+                const daysLeft = p.daysLeft ?? 0;
+                return (
+                  <div key={p.id} className="low-stock-item">
+                    <div className="low-stock-info">
+                      <span className="low-stock-name">{p.name}</span>
+                      {p.category && <span className="low-stock-cat">{p.category}</span>}
+                    </div>
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexShrink: 0 }}>
+                      <span style={{ fontSize: 12, color: '#6b7280' }}>
+                        Kho: {p.stock?.toLocaleString('vi-VN')} {p.unit}
+                      </span>
+                      <span style={{
+                        fontSize: 12, fontWeight: 700, borderRadius: 6, padding: '2px 8px',
+                        background: p.is_expired ? '#fef2f2' : daysLeft <= 14 ? '#fff7ed' : '#fefce8',
+                        color: p.is_expired ? '#dc2626' : daysLeft <= 14 ? '#ea580c' : '#ca8a04',
+                      }}>
+                        {p.is_expired ? `Hết hạn ${Math.abs(daysLeft)}N trước` : `Còn ${daysLeft} ngày`}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <button
+              className="btn-secondary"
+              style={{ marginTop: 12, fontSize: 13, padding: '6px 14px' }}
+              onClick={() => navigate('/admin/products')}
+            >
+              Quản lý sản phẩm →
             </button>
           </div>
         )}

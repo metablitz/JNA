@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Search, QrCode, Bell, ShoppingCart, Minus, Plus, Heart } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Search, QrCode, Bell, ShoppingCart, Minus, Plus, Heart, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../lib/api';
 import { useCart } from '../context/CartContext';
@@ -155,10 +155,32 @@ export default function Products() {
   const [total, setTotal] = useState(0);
   const [showQr, setShowQr] = useState(false);
   const [categories, setCategories] = useState([]);
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const searchRef = useRef(null);
   const { totalItems } = useCart();
   const { unreadCount } = useNotification();
   const navigate = useNavigate();
   const limit = 20;
+
+  // Fetch autocomplete suggestions (separate from main product list)
+  useEffect(() => {
+    if (!search.trim() || search.length < 2) { setSuggestions([]); return; }
+    const t = setTimeout(async () => {
+      try {
+        const res = await api.get('/products', { params: { search, limit: 6, page: 1 } });
+        setSuggestions(res.data.products || []);
+      } catch { setSuggestions([]); }
+    }, 200);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handler = (e) => { if (!searchRef.current?.contains(e.target)) setShowSuggestions(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
@@ -190,15 +212,41 @@ export default function Products() {
     <Layout>
       <div className="products-page">
         <header className="products-header">
-          <div className="search-bar">
-            <Search size={18} className="search-icon" />
-            <input
-              type="text"
-              placeholder="Tìm kiếm thuốc, hoạt chất..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            <button className="qr-btn" onClick={() => setShowQr(true)}><QrCode size={18} /></button>
+          <div className="search-bar-wrap" ref={searchRef}>
+            <div className="search-bar">
+              <Search size={18} className="search-icon" />
+              <input
+                type="text"
+                placeholder="Tìm kiếm thuốc, hoạt chất..."
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setShowSuggestions(true); }}
+                onFocus={() => search.length >= 2 && setShowSuggestions(true)}
+              />
+              {search && (
+                <button className="search-clear-btn" onClick={() => { setSearch(''); setSuggestions([]); setShowSuggestions(false); }}>
+                  <X size={15} />
+                </button>
+              )}
+              <button className="qr-btn" onClick={() => setShowQr(true)}><QrCode size={18} /></button>
+            </div>
+            {showSuggestions && suggestions.length > 0 && (
+              <div className="search-suggestions">
+                {suggestions.map(p => (
+                  <button
+                    key={p.id}
+                    className="suggestion-item"
+                    onMouseDown={() => { setSearch(p.name); setShowSuggestions(false); setPage(1); }}
+                  >
+                    <Search size={13} className="suggestion-icon" />
+                    <div className="suggestion-info">
+                      <span className="suggestion-name">{p.name}</span>
+                      {p.active_ingredient && <span className="suggestion-sub">{p.active_ingredient}</span>}
+                    </div>
+                    <span className="suggestion-price">{p.price?.toLocaleString('vi-VN')}đ</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           <div className="header-actions">
             <button className="icon-action-btn notif-bell-btn" onClick={() => navigate('/notifications')}>

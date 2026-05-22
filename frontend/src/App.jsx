@@ -34,6 +34,7 @@ const AdminPriceList     = lazy(() => import('./pages/admin/AdminPriceList'));
 const AdminChat          = lazy(() => import('./pages/admin/AdminChat'));
 const AdminDebtReport    = lazy(() => import('./pages/admin/AdminDebtReport'));
 const AdminBroadcast     = lazy(() => import('./pages/admin/AdminBroadcast'));
+const AdminRevenue       = lazy(() => import('./pages/admin/AdminRevenue'));
 
 function PageSpinner() {
   return (
@@ -75,6 +76,7 @@ export default function App() {
           <Route path="/admin/chat" element={<ProtectedRoute adminOnly><AdminChat /></ProtectedRoute>} />
           <Route path="/admin/debt" element={<ProtectedRoute adminOnly><AdminDebtReport /></ProtectedRoute>} />
           <Route path="/admin/broadcast" element={<ProtectedRoute adminOnly><AdminBroadcast /></ProtectedRoute>} />
+          <Route path="/admin/revenue" element={<ProtectedRoute adminOnly><AdminRevenue /></ProtectedRoute>} />
 
           <Route path="*" element={<NotFound />} />
         </Routes>

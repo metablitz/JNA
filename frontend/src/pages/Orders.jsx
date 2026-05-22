@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { RefreshCw, X, Search } from 'lucide-react';
+import { RefreshCw, X, Search, RotateCcw } from 'lucide-react';
 import api from '../lib/api';
 import { useToast } from '../context/ToastContext';
+import { useCart } from '../context/CartContext';
 import Layout from '../components/Layout';
 import ConfirmModal from '../components/ConfirmModal';
 
@@ -33,8 +34,10 @@ export default function Orders() {
   const [cancelling, setCancelling] = useState(null);
   const [cancelTarget, setCancelTarget] = useState(null); // { id, code }
   const [search, setSearch] = useState('');
+  const [reordering, setReordering] = useState(null);
   const navigate = useNavigate();
   const { showToast } = useToast();
+  const { addItem } = useCart();
 
   const fetchOrders = async () => {
     setLoading(true);
@@ -72,6 +75,20 @@ export default function Orders() {
     } finally {
       setCancelling(null);
     }
+  };
+
+  const handleReorder = async (e, orderId) => {
+    e.stopPropagation();
+    setReordering(orderId);
+    try {
+      const res = await api.get(`/orders/${orderId}`);
+      const orderItems = res.data.order_items || [];
+      if (orderItems.length === 0) { showToast('Đơn hàng không có sản phẩm', 'error'); return; }
+      orderItems.forEach(item => { if (item.products) addItem(item.products, item.quantity); });
+      showToast(`Đã thêm ${orderItems.length} sản phẩm vào giỏ hàng`, 'success');
+      navigate('/cart');
+    } catch { showToast('Không thể tải đơn hàng', 'error'); }
+    finally { setReordering(null); }
   };
 
   const formatDate = (iso) => {
@@ -152,6 +169,14 @@ export default function Orders() {
                           {cancelling === order.id ? '...' : <X size={14} />} Hủy
                         </button>
                       )}
+                      <button
+                        className="btn-reorder"
+                        onClick={(e) => handleReorder(e, order.id)}
+                        disabled={reordering === order.id}
+                        title="Đặt lại đơn này"
+                      >
+                        {reordering === order.id ? '...' : <RotateCcw size={13} />}
+                      </button>
                       <button className="btn-detail" onClick={(e) => { e.stopPropagation(); navigate(`/orders/${order.id}`); }}>Chi tiết</button>
                     </div>
                   </div>

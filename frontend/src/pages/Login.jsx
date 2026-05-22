@@ -20,7 +20,7 @@ export default function Login() {
       const user = await login(phone, password);
       navigate(user.role === 'admin' ? '/admin' : '/');
     } catch (err) {
-      setError(err.response?.data?.error || 'Đăng nhập thất bại');
+      setError(err.userMessage || err.response?.data?.error || 'Đăng nhập thất bại');
     } finally {
       setLoading(false);
     }

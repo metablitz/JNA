@@ -1,9 +1,44 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, Pencil, X, KeyRound, ClipboardList, Search } from 'lucide-react';
+import { Plus, Pencil, X, KeyRound, ClipboardList, Search, Eye, FileText, ExternalLink } from 'lucide-react';
 import api from '../../lib/api';
 import { TIERS } from '../../lib/tiers';
 import { useToast } from '../../context/ToastContext';
 import AdminLayout from './AdminLayout';
+
+function LicenseCard({ label, url }) {
+  const [imgError, setImgError] = useState(false);
+  const [lightbox, setLightbox] = useState(false);
+  if (!url) return <p style={{ fontSize: 13, color: '#9ca3af' }}>— Không có</p>;
+  const isPdf = url.toLowerCase().includes('.pdf');
+  return (
+    <div className="license-card">
+      <p className="license-card-label">{label}</p>
+      {isPdf || imgError ? (
+        <a href={url} target="_blank" rel="noopener noreferrer" className="license-pdf-btn">
+          <FileText size={16} /> Xem PDF <ExternalLink size={13} />
+        </a>
+      ) : (
+        <img src={url} alt={label} className="license-thumb"
+          onError={() => setImgError(true)} onClick={() => setLightbox(true)} />
+      )}
+      {lightbox && (
+        <div className="license-lightbox" onClick={() => setLightbox(false)}>
+          <img src={url} alt={label} className="license-lightbox-img" onClick={e => e.stopPropagation()} />
+          <button className="license-lightbox-close" onClick={() => setLightbox(false)}><X size={22} /></button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DetailRow({ label, value }) {
+  return (
+    <div className="detail-row">
+      <span className="detail-label">{label}</span>
+      <span className="detail-value">{value || '—'}</span>
+    </div>
+  );
+}
 
 const STATUS_COLORS = {
   pending: '#f59e0b', confirmed: '#3b82f6', shipping: '#8b5cf6', delivered: '#10b981', cancelled: '#ef4444',
@@ -24,9 +59,10 @@ export default function AdminUsers() {
   const [resetTarget, setResetTarget] = useState(null);
   const [newPassword, setNewPassword] = useState('');
   const [resetSaving, setResetSaving] = useState(false);
-  const [ordersUser, setOrdersUser] = useState(null); // user to view orders for
+  const [ordersUser, setOrdersUser] = useState(null);
   const [userOrders, setUserOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
+  const [detailUser, setDetailUser] = useState(null);
   const [search, setSearch] = useState('');
   const { showToast } = useToast();
 
@@ -165,6 +201,7 @@ export default function AdminUsers() {
                     </button>
                   </td>
                   <td>
+                    <button className="action-btn" style={{ background: '#f0fdf4', color: '#16a34a' }} onClick={() => setDetailUser(u)} title="Xem chi tiết đăng ký"><Eye size={15} /></button>
                     <button className="action-btn edit" onClick={() => openEdit(u)} title="Sửa thông tin"><Pencil size={15} /></button>
                     <button className="action-btn" style={{ background: '#fffbeb', color: '#d97706' }} onClick={() => openReset(u)} title="Đặt lại mật khẩu"><KeyRound size={15} /></button>
                     <button className="action-btn" style={{ background: '#eff6ff', color: '#2563eb' }} onClick={() => openOrders(u)} title="Xem đơn hàng"><ClipboardList size={15} /></button>
@@ -261,6 +298,53 @@ export default function AdminUsers() {
           </div>
         )}
       </div>
+
+      {/* Customer detail modal */}
+      {detailUser && (
+        <div className="modal-overlay" onClick={() => setDetailUser(null)}>
+          <div className="modal" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Chi tiết đăng ký — {detailUser.pharmacy_name}</h2>
+              <button onClick={() => setDetailUser(null)}><X size={20} /></button>
+            </div>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              <div className="detail-section">
+                <p className="detail-section-title">Thông tin cơ bản</p>
+                <div className="detail-grid">
+                  <DetailRow label="Tên nhà thuốc" value={detailUser.pharmacy_name} />
+                  <DetailRow label="Số điện thoại" value={detailUser.phone} />
+                  <DetailRow label="Địa chỉ" value={detailUser.address} />
+                  <DetailRow label="Mã khách hàng" value={detailUser.customer_code} />
+                  <DetailRow label="Ngày đăng ký" value={new Date(detailUser.created_at).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })} />
+                </div>
+              </div>
+              <div className="detail-section">
+                <p className="detail-section-title">Phân loại & trạng thái</p>
+                <div className="detail-grid">
+                  <DetailRow label="Vai trò" value={detailUser.role === 'admin' ? 'Admin' : 'Khách hàng'} />
+                  <DetailRow label="Tier" value={(() => { const t = TIERS[detailUser.tier] || TIERS.dong; return `${t.icon} ${t.label} (−${t.discount}%)`; })()} />
+                  <DetailRow label="Hạn mức công nợ" value={detailUser.credit_limit > 0 ? detailUser.credit_limit.toLocaleString('vi-VN') + 'đ' : '—'} />
+                  <DetailRow label="Trạng thái TK" value={detailUser.is_active ? 'Hoạt động' : 'Đã khóa'} />
+                  <DetailRow label="Trạng thái đăng ký" value={{ pending: 'Chờ duyệt', approved: 'Đã duyệt', rejected: 'Đã từ chối' }[detailUser.registration_status] || detailUser.registration_status} />
+                </div>
+              </div>
+              <div className="detail-section">
+                <p className="detail-section-title">Giấy phép kinh doanh</p>
+                <div className="reg-license-previews">
+                  <LicenseCard label="Giấy chứng nhận ĐKKD" url={detailUser.business_license_url} />
+                  <LicenseCard label="Giấy ĐK kinh doanh Dược" url={detailUser.pharma_license_url} />
+                </div>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn-secondary" onClick={() => setDetailUser(null)}>Đóng</button>
+              <button className="btn-primary" onClick={() => { setDetailUser(null); openEdit(detailUser); }}>
+                <Pencil size={14} /> Chỉnh sửa
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Customer orders modal */}
       {ordersUser && (

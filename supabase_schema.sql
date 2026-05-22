@@ -117,7 +117,16 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 10. STOCK_LOGS (lịch sử xuất nhập kho)
+-- 10. ORDER_TEMPLATES (mẫu đơn hàng định kỳ)
+CREATE TABLE IF NOT EXISTS order_templates (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name       TEXT NOT NULL,
+  items      JSONB NOT NULL DEFAULT '[]',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 11. STOCK_LOGS (lịch sử xuất nhập kho)
 CREATE TABLE IF NOT EXISTS stock_logs (
   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   product_id UUID REFERENCES products(id) ON DELETE CASCADE,
@@ -148,6 +157,7 @@ CREATE INDEX IF NOT EXISTS idx_notifications_user      ON notifications(user_id)
 CREATE INDEX IF NOT EXISTS idx_notifications_unread    ON notifications(user_id, is_read);
 CREATE INDEX IF NOT EXISTS idx_notifications_order_id  ON notifications(order_id) WHERE order_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_messages_user           ON messages(user_id);
+CREATE INDEX IF NOT EXISTS idx_order_templates_user    ON order_templates(user_id);
 CREATE INDEX IF NOT EXISTS idx_stock_logs_product      ON stock_logs(product_id);
 CREATE INDEX IF NOT EXISTS idx_stock_logs_created_by   ON stock_logs(created_by) WHERE created_by IS NOT NULL;
 
@@ -165,8 +175,9 @@ ALTER TABLE order_items   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE price_list    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE wishlists     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
-ALTER TABLE messages      ENABLE ROW LEVEL SECURITY;
-ALTER TABLE stock_logs    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE messages         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE order_templates  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE stock_logs       ENABLE ROW LEVEL SECURITY;
 
 -- ============================================================
 -- STORAGE BUCKET POLICIES

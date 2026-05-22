@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Printer, RotateCcw, X } from 'lucide-react';
+import { ArrowLeft, Printer, RotateCcw, X, Download } from 'lucide-react';
 import api from '../lib/api';
 import { useCart } from '../context/CartContext';
 import { useToast } from '../context/ToastContext';
@@ -76,6 +76,24 @@ export default function OrderDetail() {
 
   const handlePrint = () => window.print();
 
+  const handleDownloadPdf = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+      const response = await window.fetch(`${apiBase}/orders/${id}/pdf`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error();
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `hoa-don-${order.order_code}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch { showToast('Không thể tải PDF', 'error'); }
+  };
+
   const handleReorder = () => {
     order.order_items?.forEach(item => {
       if (item.products) setItemQty(item.products, item.quantity);
@@ -121,6 +139,9 @@ export default function OrderDetail() {
             )}
             <button className="btn-reorder no-print" onClick={handleReorder} title="Đặt lại đơn này">
               <RotateCcw size={15} /> Đặt lại
+            </button>
+            <button className="icon-action-btn" onClick={handleDownloadPdf} title="Tải PDF">
+              <Download size={20} />
             </button>
             <button className="icon-action-btn" onClick={handlePrint} title="In đơn hàng">
               <Printer size={20} />

@@ -2,6 +2,14 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 
+// Prevent silent crashes from unhandled async errors
+process.on('uncaughtException', (err) => {
+  console.error('[CRASH PREVENTED] uncaughtException:', err.message, err.stack);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[CRASH PREVENTED] unhandledRejection:', reason);
+});
+
 const authRoutes = require('./routes/auth');
 const productRoutes = require('./routes/products');
 const orderRoutes = require('./routes/orders');

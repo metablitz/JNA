@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Trash2, Minus, Plus, MapPin, CheckCircle, CreditCard } from 'lucide-react';
+import { ArrowLeft, Trash2, Minus, Plus, MapPin, CheckCircle, CreditCard, ShoppingCart, BookmarkPlus, BookmarkCheck, X } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import api from '../lib/api';
+import { applyTierDiscount } from '../lib/tiers';
 import Layout from '../components/Layout';
 
 function formatPrice(price) {
@@ -12,8 +13,13 @@ function formatPrice(price) {
 }
 
 export default function Cart() {
-  const { items, updateQuantity, removeItem, clearCart, totalItems, totalAmount, getTierPrice } = useCart();
+  const { items, updateQuantity, removeItem, clearCart, totalItems, totalAmount, getTierPrice, addItem } = useCart();
   const { user } = useAuth();
+  const [suggestions, setSuggestions] = useState([]);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [templates, setTemplates] = useState([]);
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [templateName, setTemplateName] = useState('');
   const [note, setNote] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('cong_no');
   const [customAddress, setCustomAddress] = useState('');
@@ -22,6 +28,56 @@ export default function Cart() {
   const [error, setError] = useState('');
   const navigate = useNavigate();
   const { showToast } = useToast();
+
+  const fetchTemplates = () => {
+    api.get('/orders/templates').then(res => setTemplates(res.data || [])).catch(() => {});
+  };
+
+  useEffect(() => { fetchTemplates(); }, []);
+
+  const handleSaveTemplate = async () => {
+    if (!templateName.trim()) return;
+    setSavingTemplate(true);
+    try {
+      const templateItems = items.map(i => ({
+        product_id: i.product_id,
+        name: i.product.name,
+        unit: i.product.unit,
+        price: i.product.price,
+        quantity: i.quantity,
+        image_url: i.product.image_url || null,
+      }));
+      await api.post('/orders/templates', { name: templateName.trim(), items: templateItems });
+      setTemplateName('');
+      showToast('Đã lưu mẫu đơn hàng', 'success');
+      fetchTemplates();
+    } catch (err) { showToast(err.response?.data?.error || 'Lỗi lưu mẫu', 'error'); }
+    finally { setSavingTemplate(false); }
+  };
+
+  const handleLoadTemplate = (tpl) => {
+    tpl.items.forEach(item => {
+      const product = { id: item.product_id, name: item.name, unit: item.unit, price: item.price, image_url: item.image_url, product_tiers: [] };
+      addItem(product, item.quantity);
+    });
+    setShowTemplates(false);
+    showToast(`Đã tải mẫu "${tpl.name}" vào giỏ`, 'success');
+  };
+
+  const handleDeleteTemplate = async (id) => {
+    try {
+      await api.delete(`/orders/templates/${id}`);
+      setTemplates(t => t.filter(x => x.id !== id));
+    } catch { /* ignore */ }
+  };
+
+  const cartIdsKey = items.map(i => i.product_id).join(',');
+  useEffect(() => {
+    if (items.length === 0) { setSuggestions([]); return; }
+    api.get('/products/frequently-bought', { params: { ids: cartIdsKey } })
+      .then(res => setSuggestions(res.data || []))
+      .catch(() => setSuggestions([]));
+  }, [cartIdsKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleOrder = async () => {
     if (items.length === 0) return;
@@ -38,7 +94,12 @@ export default function Cart() {
       showToast('Đặt hàng thành công!', 'success');
       navigate('/orders');
     } catch (err) {
-      setError(err.response?.data?.error || 'Đặt hàng thất bại');
+      const d = err.response?.data;
+      if (d?.credit_limit) {
+        setError(`${d.error}. Công nợ hiện tại: ${d.current_debt?.toLocaleString('vi-VN')}đ / Hạn mức: ${d.credit_limit?.toLocaleString('vi-VN')}đ`);
+      } else {
+        setError(d?.error || 'Đặt hàng thất bại');
+      }
     } finally {
       setLoading(false);
     }
@@ -51,7 +112,12 @@ export default function Cart() {
           <button onClick={() => navigate(-1)} className="back-btn"><ArrowLeft size={22} /></button>
           <h1>Giỏ hàng</h1>
           {items.length > 0 && (
-            <button className="clear-btn" onClick={clearCart}>Xóa tất cả</button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="icon-btn" title="Mẫu đơn hàng" onClick={() => setShowTemplates(v => !v)}>
+                {showTemplates ? <BookmarkCheck size={20} style={{ color: '#16a34a' }} /> : <BookmarkPlus size={20} />}
+              </button>
+              <button className="clear-btn" onClick={clearCart}>Xóa tất cả</button>
+            </div>
           )}
         </header>
 
@@ -66,6 +132,43 @@ export default function Cart() {
               <span>🛒 {totalItems} loại sản phẩm</span>
               <button className="btn-add" onClick={() => navigate('/')}>+ Thêm sản phẩm</button>
             </div>
+
+            {showTemplates && (
+              <div className="template-panel">
+                <div className="template-save-row">
+                  <input
+                    className="template-name-input"
+                    placeholder="Đặt tên mẫu đơn..."
+                    value={templateName}
+                    onChange={e => setTemplateName(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleSaveTemplate()}
+                  />
+                  <button className="btn-primary" style={{ padding: '8px 14px', fontSize: 13 }}
+                    onClick={handleSaveTemplate} disabled={savingTemplate || !templateName.trim()}>
+                    {savingTemplate ? '...' : 'Lưu mẫu'}
+                  </button>
+                </div>
+                {templates.length > 0 && (
+                  <>
+                    <p className="template-load-label">Tải mẫu đơn đã lưu:</p>
+                    <div className="template-list">
+                      {templates.map(tpl => (
+                        <div key={tpl.id} className="template-item">
+                          <button className="template-load-btn" onClick={() => handleLoadTemplate(tpl)}>
+                            <BookmarkCheck size={14} />
+                            <span>{tpl.name}</span>
+                            <span className="template-count">{tpl.items?.length} SP</span>
+                          </button>
+                          <button className="template-delete-btn" onClick={() => handleDeleteTemplate(tpl.id)}>
+                            <X size={13} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
 
             <div className="cart-table">
               <div className="cart-table-header">
@@ -185,6 +288,34 @@ export default function Cart() {
                 ))}
               </div>
             </div>
+
+            {suggestions.length > 0 && (
+              <div className="fbt-section">
+                <h3 className="fbt-title">🔁 Thường mua kèm</h3>
+                <div className="fbt-list">
+                  {suggestions.map(p => {
+                    const userPrice = applyTierDiscount(p.price, user?.tier);
+                    return (
+                      <div key={p.id} className="fbt-item">
+                        <div className="fbt-item-info">
+                          {p.image_url
+                            ? <img src={p.image_url} alt={p.name} className="fbt-item-img" />
+                            : <div className="fbt-item-img fbt-item-img-placeholder">💊</div>
+                          }
+                          <div>
+                            <p className="fbt-item-name">{p.name}</p>
+                            <p className="fbt-item-price">{userPrice?.toLocaleString('vi-VN')}đ/{p.unit}</p>
+                          </div>
+                        </div>
+                        <button className="fbt-add-btn" onClick={() => addItem(p, 1)} title="Thêm vào giỏ">
+                          <ShoppingCart size={14} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {error && <div className="error-msg">{error}</div>}
 

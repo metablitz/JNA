@@ -130,7 +130,12 @@ export default function Catalog() {
       setSelections({});
       navigate('/orders');
     } catch (err) {
-      showToast(err.response?.data?.error || 'Đặt hàng thất bại', 'error');
+      const d = err.response?.data;
+      if (d?.credit_limit) {
+        showToast(`${d.error}. Công nợ: ${d.current_debt?.toLocaleString('vi-VN')}đ / ${d.credit_limit?.toLocaleString('vi-VN')}đ`, 'error');
+      } else {
+        showToast(d?.error || 'Đặt hàng thất bại', 'error');
+      }
     } finally {
       setOrdering(false);
     }

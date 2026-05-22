@@ -1,9 +1,41 @@
 import { useState, useEffect } from 'react';
-import { Eye, Check, X, Clock, ChevronDown, ChevronUp } from 'lucide-react';
+import { Eye, Check, X, Clock, ChevronUp, FileText, ExternalLink } from 'lucide-react';
 import api from '../../lib/api';
 import { useToast } from '../../context/ToastContext';
 import ConfirmModal from '../../components/ConfirmModal';
 import AdminLayout from './AdminLayout';
+
+function LicenseCard({ label, url }) {
+  const [imgError, setImgError] = useState(false);
+  const [lightbox, setLightbox] = useState(false);
+  if (!url) return null;
+  const isPdf = url.toLowerCase().includes('.pdf');
+
+  return (
+    <div className="license-card">
+      <p className="license-card-label">{label}</p>
+      {isPdf || imgError ? (
+        <a href={url} target="_blank" rel="noopener noreferrer" className="license-pdf-btn">
+          <FileText size={16} /> Xem PDF <ExternalLink size={13} />
+        </a>
+      ) : (
+        <img
+          src={url}
+          alt={label}
+          className="license-thumb"
+          onError={() => setImgError(true)}
+          onClick={() => setLightbox(true)}
+        />
+      )}
+      {lightbox && (
+        <div className="license-lightbox" onClick={() => setLightbox(false)}>
+          <img src={url} alt={label} className="license-lightbox-img" onClick={e => e.stopPropagation()} />
+          <button className="license-lightbox-close" onClick={() => setLightbox(false)}><X size={22} /></button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function AdminRegistrations() {
   const [list, setList] = useState([]);
@@ -32,10 +64,12 @@ export default function AdminRegistrations() {
     setProcessing(id);
     try {
       await api.put(`/admin/registrations/${id}/approve`, { customer_code: customerCode });
+      showToast('Đã duyệt và kích hoạt tài khoản', 'success');
       setDetail(null);
       load();
-    } catch (e) { showToast(e.response?.data?.error || 'Lỗi', 'error'); }
-    finally { setProcessing(null); }
+    } catch (e) {
+      showToast(e.userMessage || 'Lỗi không xác định', 'error');
+    } finally { setProcessing(null); }
   };
 
   const reject = (id) => setRejectTarget(id);
@@ -49,7 +83,9 @@ export default function AdminRegistrations() {
       setDetail(null);
       load();
       showToast('Đã từ chối đăng ký', 'info');
-    } catch (e) { showToast(e.response?.data?.error || 'Lỗi', 'error'); }
+    } catch (e) {
+      showToast(e.userMessage || 'Lỗi không xác định', 'error');
+    }
     finally { setProcessing(null); }
   };
 
@@ -106,13 +142,9 @@ export default function AdminRegistrations() {
           <tr className="reg-detail-row">
             <td colSpan={4}>
               <div className="reg-detail-panel">
-                <div className="reg-license-links" style={{ marginBottom: isPending ? 14 : 0 }}>
-                  <a href={r.business_license_url} target="_blank" rel="noopener noreferrer" className="license-link">
-                    <Eye size={15} /> Giấy chứng nhận ĐKKD
-                  </a>
-                  <a href={r.pharma_license_url} target="_blank" rel="noopener noreferrer" className="license-link">
-                    <Eye size={15} /> Giấy ĐK kinh doanh Dược
-                  </a>
+                <div className="reg-license-previews" style={{ marginBottom: isPending ? 14 : 0 }}>
+                  <LicenseCard label="Giấy chứng nhận ĐKKD" url={r.business_license_url} />
+                  <LicenseCard label="Giấy ĐK kinh doanh Dược" url={r.pharma_license_url} />
                 </div>
 
                 {isPending && (
