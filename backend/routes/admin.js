@@ -833,4 +833,108 @@ router.get('/stats', requireAdmin, async (req, res) => {
   });
 });
 
+// --- STOCK REPORT ---
+
+// Summary: group by product, totals per reason, chart by day
+router.get('/stock/report', requireAdmin, async (req, res) => {
+  const { from, to, reason } = req.query;
+
+  let query = supabase
+    .from('stock_logs')
+    .select('id, change_qty, reason, note, created_at, product_id, products(id, name, unit, category, stock)')
+    .order('created_at', { ascending: false })
+    .limit(5000);
+
+  if (from) query = query.gte('created_at', new Date(from).toISOString());
+  if (to) {
+    const toDate = new Date(to);
+    toDate.setHours(23, 59, 59, 999);
+    query = query.lte('created_at', toDate.toISOString());
+  }
+  if (reason && reason !== 'all') query = query.eq('reason', reason);
+
+  const { data, error } = await query;
+  if (error) return res.status(500).json({ error: error.message });
+
+  // Group by product
+  const byProduct = {};
+  (data || []).forEach(log => {
+    const p = log.products;
+    if (!p) return;
+    if (!byProduct[p.id]) {
+      byProduct[p.id] = {
+        product_id: p.id, name: p.name, unit: p.unit,
+        category: p.category, current_stock: p.stock,
+        import_qty: 0, export_qty: 0, adjustment_qty: 0, order_qty: 0,
+      };
+    }
+    const e = byProduct[p.id];
+    if (log.reason === 'import')     e.import_qty     += log.change_qty;
+    else if (log.reason === 'export') e.export_qty     += Math.abs(log.change_qty);
+    else if (log.reason === 'adjustment') e.adjustment_qty += log.change_qty;
+    else if (log.reason === 'order')  e.order_qty      += Math.abs(log.change_qty);
+  });
+
+  // Chart: daily in/out totals
+  const byDay = {};
+  (data || []).forEach(log => {
+    const day = log.created_at.slice(0, 10);
+    if (!byDay[day]) byDay[day] = { date: day, in: 0, out: 0 };
+    if (log.change_qty > 0) byDay[day].in  += log.change_qty;
+    else                    byDay[day].out += Math.abs(log.change_qty);
+  });
+  const chart = Object.values(byDay).sort((a, b) => a.date.localeCompare(b.date));
+
+  // Summary: only products that had activity
+  const summary = Object.values(byProduct).sort((a, b) => a.name.localeCompare(b.name));
+
+  res.json({ summary, chart, total_logs: (data || []).length });
+});
+
+// Export stock report to Excel
+router.get('/stock/report/export', requireAdmin, async (req, res) => {
+  const { from, to, reason } = req.query;
+
+  let query = supabase
+    .from('stock_logs')
+    .select('change_qty, reason, note, created_at, products(name, unit, category), users(pharmacy_name)')
+    .order('created_at', { ascending: false })
+    .limit(5000);
+
+  if (from) query = query.gte('created_at', new Date(from).toISOString());
+  if (to) {
+    const toDate = new Date(to);
+    toDate.setHours(23, 59, 59, 999);
+    query = query.lte('created_at', toDate.toISOString());
+  }
+  if (reason && reason !== 'all') query = query.eq('reason', reason);
+
+  const { data, error } = await query;
+  if (error) return res.status(500).json({ error: error.message });
+
+  const REASON_VN = { import: 'Nhập hàng', export: 'Xuất hàng', adjustment: 'Điều chỉnh', order: 'Đơn hàng' };
+
+  const rows = [['Ngày', 'Sản phẩm', 'Danh mục', 'ĐVT', 'Lý do', 'Số lượng', 'Ghi chú', 'Người thực hiện']];
+  (data || []).forEach(log => {
+    rows.push([
+      new Date(log.created_at).toLocaleDateString('vi-VN'),
+      log.products?.name || '',
+      log.products?.category || '',
+      log.products?.unit || '',
+      REASON_VN[log.reason] || log.reason,
+      log.change_qty,
+      log.note || '',
+      log.users?.pharmacy_name || 'System',
+    ]);
+  });
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Xuất nhập kho');
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+  res.setHeader('Content-Disposition', 'attachment; filename="bao-cao-kho.xlsx"');
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.send(buf);
+});
+
 module.exports = router;

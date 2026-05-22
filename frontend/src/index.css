@@ -298,6 +298,9 @@ a { text-decoration: none; color: inherit; }
 .orders-stats-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 12px; font-size: 13px; flex-wrap: wrap; }
 .orders-stats-sep { color: #d1d5db; }
 .bulk-action-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 16px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; margin-bottom: 10px; font-size: 13px; flex-wrap: wrap; }
+.stock-filter-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; padding: 14px 16px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 12px; }
+.filter-input { border: 1.5px solid #d1d5db; border-radius: 8px; padding: 7px 10px; font-size: 13px; outline: none; background: #fff; }
+.filter-input:focus { border-color: #16a34a; }
 .dash-low-stock { border-left: 3px solid #d97706 !important; }
 .low-stock-list { display: flex; flex-direction: column; gap: 6px; }
 .low-stock-item { display: flex; align-items: center; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid #f3f4f6; }

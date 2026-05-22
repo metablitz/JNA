@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Package, FileSpreadsheet, Users, UserPlus, LogOut, MessageSquare, ClipboardList, TrendingDown, Bell, BarChart2 } from 'lucide-react';
+import { LayoutDashboard, Package, FileSpreadsheet, Users, UserPlus, LogOut, MessageSquare, ClipboardList, TrendingDown, Bell, BarChart2, Warehouse } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import api from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
@@ -70,6 +70,9 @@ export default function AdminLayout({ children }) {
           </NavLink>
           <NavLink to="/admin/revenue" className={navItem}>
             <BarChart2 size={20} /> Doanh thu
+          </NavLink>
+          <NavLink to="/admin/stock" className={navItem}>
+            <Warehouse size={20} /> Xuất nhập kho
           </NavLink>
           <NavLink to="/admin/broadcast" className={navItem}>
             <Bell size={20} /> Gửi thông báo
